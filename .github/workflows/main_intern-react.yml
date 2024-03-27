@@ -1,70 +1,63 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy Node.js app to Azure Web App - intern-react
+name: build and deploy to S3 with cloudfront
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+      - dev
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
+        with: 
+          token: ${{secrets.TOKEN}}
 
-      - name: Set up Node.js version
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20.x'
-
-      - name: npm install, build, and test
+      - name: install dependencies and build
         run: |
           yarn install
           yarn build 
 
-      - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
 
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v3
-        with:
-          name: node-app
-          path: release.zip
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
-    environment:
-      name: 'Production'
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
-    permissions:
-      id-token: write #This is required for requesting the JWT
-
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v3
-        with:
-          name: node-app
+      - uses: aws-actions/configure-aws-credentials@v1
+        with: 
+          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY}}
+          aws-secret-access-key: ${{secrets.AWS_SECRET_KEY}}
 
-      - name: Unzip artifact for deployment
-        run: unzip release.zip
-      
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_3DF6C6367FA44D5F855CF78B07806376 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_28C87039986641B088B7D7374E068F09 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_85B9A6BD94FD453A8EEBAE4BA2CF7543 }}
+      - name: Deploy to S3
+        run: |
+          aws s3 sync ./dist/ s3://bijay-cicd-bucket/
 
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: 'intern-react'
-          slot-name: 'Production'
-          package: .
+  invalidate:
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: invalidate cloudfront cache
+        env:
+          DISTRIBUTION_ID: ${{secrets.DISTRIBUTION_ID}}
+        run: |
+          aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"
+
+  increaseVersion:
+    runs-on: self-hosted
+    needs: invalidate
+    steps:
+      - name: Increase the package version
+        run: |
+          git config --global user.email ${{secrets.EMAIL}}
+          git config --global user.name ${{secrets.USERNAME}}
+          npm version patch
+          git add .
+          git commit -m "package version increased"
+          git push -u origin main
           
+        
+          
+
