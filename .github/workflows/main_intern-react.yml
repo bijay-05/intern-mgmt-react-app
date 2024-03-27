@@ -65,7 +65,7 @@ jobs:
           npm version patch
           git add .
           git commit -m "package version increased"
-          git push -u origin main
+          git push origin main
           
         
           
