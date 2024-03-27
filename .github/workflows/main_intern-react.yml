@@ -22,7 +22,6 @@ jobs:
 
       - name: install dependencies and build
         run: |
-          cd intern-mgmt-react-app
           yarn install
           yarn build 
 
